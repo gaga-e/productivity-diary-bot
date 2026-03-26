@@ -2,9 +2,10 @@ import os
 import threading
 from datetime import datetime, timedelta
 import pytz
+import calendar
+import certifi
 from config import DB_PATH, HABITS, TIMEZONE, MONGODB_URI, MONGO_DB_NAME
 from fpdf import FPDF
-import calendar
 from pymongo import MongoClient, UpdateOne
 from bson import ObjectId
 
@@ -12,7 +13,7 @@ _lock = threading.Lock()
 
 # MongoDB Connection
 if MONGODB_URI:
-    client = MongoClient(MONGODB_URI)
+    client = MongoClient(MONGODB_URI, tlsCAFile=certifi.where())
     db = client[MONGO_DB_NAME]
     print("Connected to MongoDB Atlas! ☁️")
 else:
