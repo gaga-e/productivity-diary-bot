@@ -42,4 +42,6 @@ EVENING_SUMMARY_TIME = "21:00"  # 24h format
 RANDOM_REMINDER_COUNT = 3      # How many random nudges per day
 
 # --- DATABASE ---
-DB_PATH = "productivity_bot.db"
+MONGODB_URI = os.getenv("MONGODB_URI")
+MONGO_DB_NAME = "productivity_bot"
+DB_PATH = "productivity_bot.db"  # Kept for local fallback/legacy if needed
