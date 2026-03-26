@@ -1,0 +1,9 @@
+python-telegram-bot>=21.0
+APScheduler>=3.10.0
+thefuzz>=0.22.1
+python-levenshtein>=0.25.0
+pytz>=2024.1
+fpdf2>=2.7.0
+httpx>=0.28.1
+python-dotenv>=1.0.1
+flask>=3.0.0

@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# Database
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# PDF Exports
+*.pdf
+
+# IDEs
+.vscode/
+.idea/
+.DS_Store
