@@ -8,4 +8,4 @@ httpx>=0.28.1
 python-dotenv>=1.0.1
 flask>=3.0.0
 pymongo[srv]==3.12
-dnspython>=2.6.0
+dnspython<2.0.0
