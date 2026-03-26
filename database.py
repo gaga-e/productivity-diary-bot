@@ -13,7 +13,12 @@ _lock = threading.Lock()
 
 # MongoDB Connection
 if MONGODB_URI:
-    client = MongoClient(MONGODB_URI, tlsCAFile=certifi.where())
+    client = MongoClient(
+        MONGODB_URI,
+        tls=True,
+        tlsCAFile=certifi.where(),
+        serverSelectionTimeoutMS=30000
+    )
     db = client[MONGO_DB_NAME]
     print("Connected to MongoDB Atlas! ☁️")
 else:
