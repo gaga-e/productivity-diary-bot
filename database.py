@@ -13,17 +13,25 @@ _lock = threading.Lock()
 
 # MongoDB Connection
 if MONGODB_URI:
-    client = MongoClient(
-        MONGODB_URI,
-        tls=True,
-        tlsCAFile=certifi.where(),
-        serverSelectionTimeoutMS=30000
-    )
-    db = client[MONGO_DB_NAME]
-    print("Connected to MongoDB Atlas! ☁️")
+    try:
+        client = MongoClient(
+            MONGODB_URI,
+            tls=True,
+            tlsCAFile=certifi.where(),
+            serverSelectionTimeoutMS=10000, # Wait 10s for the ping
+            tlsAllowInvalidCertificates=True # Last resort for SSL/Handshake issues
+        )
+        # Test the connection immediately
+        client.admin.command('ping')
+        db = client[MONGO_DB_NAME]
+        print("Connected to MongoDB Atlas! ☁️")
+    except Exception as e:
+        print(f"FAILED to connect to MongoDB: {e} ❌")
+        print("Falling back to local SQLite. ⚠️")
+        client = None
+        db = None
+        import sqlite3
 else:
-    # Use fallback or error out - for now, we'll try to keep SQLite logic available
-    # but the user explicitly asked for MongoDB, so we prioritize it.
     client = None
     db = None
     import sqlite3
