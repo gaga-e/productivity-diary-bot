@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import pytz
 import calendar
 import certifi
+import sqlite3
 from config import DB_PATH, HABITS, TIMEZONE, MONGODB_URI, MONGO_DB_NAME
 from fpdf import FPDF
 from pymongo import MongoClient, UpdateOne
@@ -18,24 +19,22 @@ if MONGODB_URI:
             MONGODB_URI,
             tls=True,
             tlsCAFile=certifi.where(),
-            serverSelectionTimeoutMS=10000, # Wait 10s for the ping
+            serverSelectionTimeoutMS=5000, # Wait 5s for the ping
             tlsAllowInvalidCertificates=True # Last resort for SSL/Handshake issues
         )
         # Test the connection immediately
         client.admin.command('ping')
         db = client[MONGO_DB_NAME]
-        print("Connected to MongoDB Atlas! ☁️")
+        print("Connected to MongoDB Atlas!")
     except Exception as e:
-        print(f"FAILED to connect to MongoDB: {e} ❌")
-        print("Falling back to local SQLite. ⚠️")
+        print(f"FAILED to connect to MongoDB: {e}")
+        print("Falling back to local SQLite.")
         client = None
         db = None
-        import sqlite3
 else:
     client = None
     db = None
-    import sqlite3
-    print("MONGODB_URI not found. Falling back to local SQLite. ⚠️")
+    print("MONGODB_URI not found. Falling back to local SQLite.")
 
 def _get_today():
     """Get today's date in 'YYYY-MM-DD' format based on the configured timezone."""
@@ -350,10 +349,15 @@ HABIT_DONE_COLOR = (40, 167, 69)
 HABIT_MISS_COLOR = (230, 230, 230)
 NO_DATA_COLOR = (245, 245, 245)
 
+def _clean_str(text):
+    if not text:
+        return ""
+    return str(text).encode('latin-1', 'ignore').decode('latin-1')
+
 def _draw_year_grid_portrait(pdf, year, data_dict, color_fn, title):
     pdf.add_page('P')
     pdf.set_font("Helvetica", 'B', 16)
-    pdf.cell(0, 12, title, ln=True, align='C')
+    pdf.cell(0, 12, _clean_str(title), ln=True, align='C')
     pdf.ln(3)
 
     cell = 3.8
@@ -413,11 +417,11 @@ def export_to_pdf():
         # SQLite Fallback
         with _lock:
             c = _conn_sqlite()
-            all_moods = c.execute('SELECT * FROM mood ORDER BY date ASC').fetchall()
-            all_notes = c.execute('SELECT * FROM notes ORDER BY timestamp ASC').fetchall()
-            all_habits = c.execute('SELECT * FROM habits ORDER BY date ASC, name ASC').fetchall()
-            all_tasks = c.execute('SELECT * FROM tasks ORDER BY date_added ASC').fetchall()
-            streaks = c.execute('SELECT * FROM streaks').fetchall()
+            all_moods = [dict(r) for r in c.execute('SELECT * FROM mood ORDER BY date ASC').fetchall()]
+            all_notes = [dict(r) for r in c.execute('SELECT * FROM notes ORDER BY timestamp ASC').fetchall()]
+            all_habits = [dict(r) for r in c.execute('SELECT * FROM habits ORDER BY date ASC, name ASC').fetchall()]
+            all_tasks = [dict(r) for r in c.execute('SELECT * FROM tasks ORDER BY date_added ASC').fetchall()]
+            streaks = [dict(r) for r in c.execute('SELECT * FROM streaks').fetchall()]
             c.close()
 
     year = datetime.now().year
@@ -468,19 +472,19 @@ def export_to_pdf():
             r, g, b = MOOD_COLORS.get(mood['score'], (200, 200, 200))
             pdf.set_fill_color(r, g, b); pdf.rect(15, pdf.get_y(), 180, 12, 'F')
             pdf.set_text_color(255, 255, 255); pdf.set_font("Helvetica", 'B', 11)
-            pdf.cell(0, 12, f"  Mood: {mood['emoji']} {mood['score']}/5 - {MOOD_LABELS.get(mood['score'], '')}", ln=True)
+            pdf.cell(0, 12, _clean_str(f"  Mood: {mood['emoji']} {mood['score']}/5 - {MOOD_LABELS.get(mood['score'], '')}"), ln=True)
             pdf.set_text_color(0, 0, 0); pdf.ln(5)
 
         for section, items, label in [("habits", day_data.get("habits", []), "Daily Habits"), ("tasks", day_data.get("tasks", []), "Tasks")]:
             if items:
                 pdf.set_font("Helvetica", 'B', 12); pdf.cell(0, 10, label, ln=True); pdf.set_font("Helvetica", '', 10)
-                for i in items: pdf.cell(0, 7, f"    [{'X' if i['done'] else ' '}] {i['name'].capitalize()}", ln=True)
+                for i in items: pdf.cell(0, 7, _clean_str(f"    [{'X' if i['done'] else ' '}] {i['name'].capitalize()}"), ln=True)
                 pdf.ln(3)
 
         notes = day_data.get("notes", [])
         if notes:
             pdf.set_font("Helvetica", 'B', 12); pdf.cell(0, 10, "Journal", ln=True); pdf.set_font("Helvetica", '', 10)
-            for n in notes: pdf.multi_cell(0, 6, f"    [{n['time']}] {n['content']}"); pdf.ln(1)
+            for n in notes: pdf.multi_cell(0, 6, _clean_str(f"    [{n['time']}] {n['content']}")); pdf.ln(1)
 
     # Trackers
     _draw_year_grid_portrait(pdf, year, {m['date']: m['score'] for m in all_moods}, lambda v: MOOD_COLORS.get(v, NO_DATA_COLOR), f"Mood Tracker - {year}")
@@ -488,12 +492,12 @@ def export_to_pdf():
     habit_names = sorted(set(h['name'] for h in all_habits))
     for name in habit_names:
         h_data = {h['date']: h.get('is_done', 0) for h in all_habits if h['name'] == name}
-        _draw_year_grid_portrait(pdf, year, h_data, lambda v: (HABIT_DONE_COLOR if v else HABIT_MISS_COLOR), f"Habit: {name.capitalize()} - {year}")
+        _draw_year_grid_portrait(pdf, year, h_data, lambda v: (HABIT_DONE_COLOR if v else HABIT_MISS_COLOR), _clean_str(f"Habit: {name.capitalize()} - {year}"))
 
     if streaks:
         pdf.add_page('P'); pdf.set_font("Helvetica", 'B', 20); pdf.cell(0, 15, "Current Streaks", ln=True, align='C'); pdf.ln(5)
         for s in streaks:
-            pdf.set_font("Helvetica", 'B', 12); pdf.cell(55, 10, f"  {s['habit_name'].capitalize()}")
+            pdf.set_font("Helvetica", 'B', 12); pdf.cell(55, 10, _clean_str(f"  {s['habit_name'].capitalize()}"))
             bar_w = min(s['current_streak'] * 5, 100)
             pdf.set_fill_color(*HABIT_DONE_COLOR); pdf.rect(pdf.get_x(), pdf.get_y() + 2, bar_w, 6, 'F')
             pdf.cell(bar_w + 5, 10, ""); pdf.cell(0, 10, f"{s['current_streak']} days (Best: {s['longest_streak']})", ln=True)
