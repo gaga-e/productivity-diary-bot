@@ -304,6 +304,88 @@ def get_all_user_chat_ids():
         c.close()
     return [r['chat_id'] for r in rows]
 
+# ── PERSISTENT SEEN JOBS DEDUPLICATION ──────────────────────
+import hashlib
+
+def _calc_job_hash(job: dict) -> str:
+    title = str(job.get('title') or '').lower().strip()
+    company = str(job.get('company') or '').lower().strip()
+    location = str(job.get('location') or '').lower().strip()
+    key = f"{title}|{company}|{location}"
+    return hashlib.md5(key.encode()).hexdigest()
+
+def filter_unseen_jobs(chat_id: int, jobs: list) -> list:
+    if not jobs:
+        return []
+    
+    job_map = {}
+    for j in jobs:
+        h = _calc_job_hash(j)
+        if h not in job_map:
+            job_map[h] = j
+
+    hashes = list(job_map.keys())
+    if not hashes:
+        return []
+
+    if db is not None:
+        seen_docs = list(db.seen_jobs.find({"chat_id": chat_id, "job_hash": {"$in": hashes}}))
+        seen_hashes = set(d["job_hash"] for d in seen_docs)
+    else:
+        with _lock:
+            c = _conn_sqlite()
+            c.execute('''
+                CREATE TABLE IF NOT EXISTS seen_jobs (
+                    chat_id INTEGER,
+                    job_hash TEXT,
+                    timestamp TEXT,
+                    PRIMARY KEY (chat_id, job_hash)
+                )
+            ''')
+            placeholders = ",".join("?" for _ in hashes)
+            query = f"SELECT job_hash FROM seen_jobs WHERE chat_id = ? AND job_hash IN ({placeholders})"
+            rows = c.execute(query, [chat_id] + hashes).fetchall()
+            c.close()
+            seen_hashes = set(r["job_hash"] for r in rows)
+
+    return [job_map[h] for h in hashes if h not in seen_hashes]
+
+def mark_jobs_seen(chat_id: int, jobs: list):
+    if not jobs or not chat_id:
+        return
+    today = _get_today()
+    hashes = list(set(_calc_job_hash(j) for j in jobs))
+
+    if db is not None:
+        ops = [
+            UpdateOne(
+                {"chat_id": chat_id, "job_hash": h},
+                {"$setOnInsert": {"chat_id": chat_id, "job_hash": h, "timestamp": today}},
+                upsert=True
+            )
+            for h in hashes
+        ]
+        if ops:
+            db.seen_jobs.bulk_write(ops)
+    else:
+        with _lock:
+            c = _conn_sqlite()
+            c.execute('''
+                CREATE TABLE IF NOT EXISTS seen_jobs (
+                    chat_id INTEGER,
+                    job_hash TEXT,
+                    timestamp TEXT,
+                    PRIMARY KEY (chat_id, job_hash)
+                )
+            ''')
+            for h in hashes:
+                c.execute('''
+                    INSERT OR IGNORE INTO seen_jobs (chat_id, job_hash, timestamp)
+                    VALUES (?, ?, ?)
+                ''', (chat_id, h, today))
+            c.commit()
+            c.close()
+
 # ── TASKS ───────────────────────────────────────────────────
 def add_task(description):
     today = _get_today()

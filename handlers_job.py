@@ -119,12 +119,20 @@ async def _run_search_and_respond(update, context, keywords, location, status_ms
             await status_msg.edit_text(f"⚠️ Search failed unexpectedly: {html.escape(str(e))}")
             return
 
+    import database as db
+    unseen_jobs = db.filter_unseen_jobs(chat_id, jobs)
+    if unseen_jobs:
+        db.mark_jobs_seen(chat_id, unseen_jobs)
+        jobs = unseen_jobs
+    else:
+        jobs = []
+
     escaped_keywords = html.escape(keywords)
     escaped_loc = html.escape(location)
 
     if not jobs:
         await status_msg.edit_text(
-            f'😕 No jobs found for "<b>{escaped_keywords}</b>" in the last {cfg.JOB_LOOKBACK_HOURS}h.\n\n{_status_summary(status)}',
+            f'😕 No new/unseen jobs found for "<b>{escaped_keywords}</b>".\n<i>(All recent listings have already been shown to you!)</i>\n\n{_status_summary(status)}',
             parse_mode="HTML"
         )
         return
