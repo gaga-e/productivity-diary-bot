@@ -4,6 +4,7 @@ from config import TELEGRAM_TOKEN
 import handlers
 from handlers_job import cmd_job, btn_job_page
 import database as db
+from scheduler import setup_scheduler
 from keep_alive import keep_alive
 
 logging.basicConfig(
@@ -11,10 +12,15 @@ logging.basicConfig(
     level=logging.INFO
 )
 
+async def post_init(application):
+    db.init_db()
+    setup_scheduler(application)
+    print("Scheduler initialized on startup! ⏰")
+
 def main():
     db.init_db()
 
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).post_init(post_init).build()
 
     app.add_handler(CommandHandler("start", handlers.start))
     app.add_handler(CommandHandler("help", handlers.help_command))

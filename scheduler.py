@@ -47,6 +47,7 @@ async def send_random_reminder(app, chat_id):
 async def send_evening_summary(app, chat_id):
     mood, notes = db.get_today_logs()
     todos = db.get_today_todos()
+    streaks = db.get_streaks()
 
     done_list = [t['name'] for t in todos if t['done']]
     missed_list = [t['name'] for t in todos if not t['done']]
@@ -54,6 +55,13 @@ async def send_evening_summary(app, chat_id):
     done_count = len(done_list)
 
     msg = "🌙 *End of Day Recap* 🌙\n\n"
+    if streaks:
+        msg += "🔥 *Your Active Streaks:*\n"
+        for h, s in streaks.items():
+            if s > 0:
+                msg += f"  • {h.capitalize()}: {s} day{'s' if s != 1 else ''}\n"
+        msg += "\n"
+
     if done_count == total and total > 0:
         msg += "🎉 *PERFECT DAY!* You completed everything! 🏆\n\n"
     elif done_count > 0:
@@ -125,23 +133,32 @@ def add_specific_time_reminder(app, chat_id, time_str, text):
         print(f"Error parsing time: {e}")
         return False
 
-def setup_scheduler(application, chat_id):
+def setup_scheduler(application, chat_id=None):
     _ensure_scheduler()
 
-    # Morning
-    h, m = map(int, MORNING_MESSAGE_TIME.split(":"))
-    _scheduler.add_job(send_morning_message, CronTrigger(hour=h, minute=m), args=[application, chat_id], id="morning", replace_existing=True)
+    if chat_id:
+        db.register_user_chat_id(chat_id)
 
-    # Evening
-    h, m = map(int, EVENING_SUMMARY_TIME.split(":"))
-    _scheduler.add_job(send_evening_summary, CronTrigger(hour=h, minute=m), args=[application, chat_id], id="evening", replace_existing=True)
+    chat_ids = db.get_all_user_chat_ids()
+    if chat_id and chat_id not in chat_ids:
+        chat_ids.append(chat_id)
 
-    # Random
-    for i in range(RANDOM_REMINDER_COUNT):
-        rand_h = random.randint(10, 20)
-        rand_m = random.randint(0, 59)
-        id_str = f"nudge_{chat_id}_{i}"
-        _scheduler.add_job(send_random_reminder, CronTrigger(hour=rand_h, minute=rand_m), 
-                         args=[application, chat_id], id=id_str, replace_existing=True)
+    h_m, m_m = map(int, MORNING_MESSAGE_TIME.split(":"))
+    h_e, m_e = map(int, EVENING_SUMMARY_TIME.split(":"))
+
+    for cid in chat_ids:
+        # Morning
+        _scheduler.add_job(send_morning_message, CronTrigger(hour=h_m, minute=m_m), args=[application, cid], id=f"morning_{cid}", replace_existing=True)
+
+        # Evening
+        _scheduler.add_job(send_evening_summary, CronTrigger(hour=h_e, minute=m_e), args=[application, cid], id=f"evening_{cid}", replace_existing=True)
+
+        # Random
+        for i in range(RANDOM_REMINDER_COUNT):
+            rand_h = random.randint(10, 20)
+            rand_m = random.randint(0, 59)
+            id_str = f"nudge_{cid}_{i}"
+            _scheduler.add_job(send_random_reminder, CronTrigger(hour=rand_h, minute=rand_m), 
+                             args=[application, cid], id=id_str, replace_existing=True)
 
     return _scheduler

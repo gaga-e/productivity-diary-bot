@@ -65,9 +65,7 @@ def mood_keyboard():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db.init_db()
     db.init_today(list(HABITS.keys()))
-    if not context.bot_data.get('sched'):
-        setup_scheduler(context.application, update.effective_chat.id)
-        context.bot_data['sched'] = True
+    setup_scheduler(context.application, update.effective_chat.id)
     await update.message.reply_text(random.choice(GREETINGS), reply_markup=main_menu())
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -85,6 +83,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ── MESSAGE HANDLER ─────────────────────────────────────────
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat:
+        db.register_user_chat_id(update.effective_chat.id)
     text = update.message.text
     state = context.user_data.get('state')
 

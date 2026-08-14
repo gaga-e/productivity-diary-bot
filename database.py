@@ -260,6 +260,50 @@ def get_streaks():
         c.close()
     return {r['habit_name']: r['current_streak'] for r in rows}
 
+# ── USER CHAT ID TRACKING ───────────────────────────────────
+def register_user_chat_id(chat_id):
+    if not chat_id: return
+    today = _get_today()
+    if db is not None:
+        db.users.update_one(
+            {"chat_id": chat_id},
+            {"$set": {"chat_id": chat_id, "last_active": today}},
+            upsert=True
+        )
+        return
+
+    with _lock:
+        c = _conn_sqlite()
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                chat_id INTEGER PRIMARY KEY,
+                last_active TEXT
+            )
+        ''')
+        c.execute('''
+            INSERT INTO users (chat_id, last_active) VALUES (?, ?)
+            ON CONFLICT(chat_id) DO UPDATE SET last_active=excluded.last_active
+        ''', (chat_id, today))
+        c.commit()
+        c.close()
+
+def get_all_user_chat_ids():
+    if db is not None:
+        users = list(db.users.find())
+        return [u['chat_id'] for u in users if 'chat_id' in u]
+    
+    with _lock:
+        c = _conn_sqlite()
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                chat_id INTEGER PRIMARY KEY,
+                last_active TEXT
+            )
+        ''')
+        rows = c.execute('SELECT chat_id FROM users').fetchall()
+        c.close()
+    return [r['chat_id'] for r in rows]
+
 # ── TASKS ───────────────────────────────────────────────────
 def add_task(description):
     today = _get_today()
