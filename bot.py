@@ -2,6 +2,7 @@ import logging
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 from config import TELEGRAM_TOKEN
 import handlers
+from handlers_job import cmd_job, btn_job_page
 import database as db
 from keep_alive import keep_alive
 
@@ -17,6 +18,8 @@ def main():
 
     app.add_handler(CommandHandler("start", handlers.start))
     app.add_handler(CommandHandler("help", handlers.help_command))
+    app.add_handler(CommandHandler("job", cmd_job))
+    app.add_handler(CallbackQueryHandler(btn_job_page, pattern=r"^jobpage:"))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handlers.handle_message))
     app.add_handler(CallbackQueryHandler(handlers.button_handler))
 

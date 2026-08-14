@@ -45,3 +45,18 @@ RANDOM_REMINDER_COUNT = 3      # How many random nudges per day
 MONGODB_URI = os.getenv("MONGODB_URI")
 MONGO_DB_NAME = "productivity_bot"
 DB_PATH = "productivity_bot.db"  # Kept for local fallback/legacy if needed
+
+# --- JOB SEARCH SETTINGS ---
+ADZUNA_APP_ID = os.getenv("ADZUNA_APP_ID", "")
+ADZUNA_APP_KEY = os.getenv("ADZUNA_APP_KEY", "")
+ADZUNA_COUNTRY = os.getenv("ADZUNA_COUNTRY", "us")
+JOOBLE_API_KEY = os.getenv("JOOBLE_API_KEY", "")
+
+DEFAULT_LOCATION = "Remote"
+JOB_LOOKBACK_HOURS = 24
+JOB_RESULT_LIMIT = 50
+JOB_RESULTS_PER_PAGE = 10
+JOB_SEARCH_TIMEOUT_SECONDS = 45
+JOB_SEARCH_CACHE_MINUTES = 15
+JOB_SEARCH_COOLDOWN_SECONDS = 60
+JOBSPY_SITE_NAMES = ["linkedin", "indeed"]
