@@ -90,7 +90,10 @@ def _ensure_scheduler():
     if not _scheduler:
         tz = pytz.timezone(TIMEZONE)
         _scheduler = AsyncIOScheduler(timezone=tz)
-        _scheduler.start()
+        try:
+            _scheduler.start()
+        except RuntimeError:
+            pass
 
 def add_one_off_reminder(app, chat_id, minutes, text):
     _ensure_scheduler()
