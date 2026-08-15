@@ -41,15 +41,31 @@ def _status_summary(status: dict) -> str:
     return html.escape(line)
 
 
+from datetime import datetime
+
+
+def _format_date_posted(date_str: str) -> str:
+    if not date_str:
+        return "Recent"
+    try:
+        if "T" in date_str:
+            dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+            return dt.strftime("%b %d, %Y")
+        return str(date_str)[:10]
+    except Exception:
+        return str(date_str)[:10] if len(str(date_str)) >= 10 else "Recent"
+
+
 def _format_job(j: dict) -> str:
     title = html.escape(j.get("title") or "Untitled")
     company = html.escape(j.get("company") or "Unknown company")
     loc = html.escape(j.get("location") or "Unspecified")
     link = j.get("link") or ""
     src = html.escape(j.get("source") or "web")
+    date_posted = html.escape(_format_date_posted(j.get("date_posted")))
     if link:
-        return f"💼 <b>{title}</b>\n🏢 {company} — {loc}\n🔗 <a href=\"{html.escape(link)}\">{src}</a>"
-    return f"💼 <b>{title}</b>\n🏢 {company} — {loc}\n({src}, no link available)"
+        return f"💼 <b>{title}</b>\n🏢 {company} — {loc}\n📅 Posted: {date_posted} | 🔗 <a href=\"{html.escape(link)}\">{src}</a>"
+    return f"💼 <b>{title}</b>\n🏢 {company} — {loc}\n📅 Posted: {date_posted} ({src}, no link available)"
 
 
 def _build_page_text(jobs: list, page: int, page_size: int, header: str = "") -> str:

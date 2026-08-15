@@ -70,18 +70,24 @@ def parse_job_query(raw_args: str):
 # Each MUST be safe to run in a thread and MUST raise on failure (caller catches).
 # --------------------------------------------------------------------------
 def fetch_jobspy_jobs(keywords: str, location: str, hours: int):
+    import pandas as pd
     from jobspy import scrape_jobs  # imported lazily; heavy dependency
 
     hours_old = hours if hours else 24
+    is_remote_search = bool(location and "remote" in location.lower())
     df = scrape_jobs(
         site_name=cfg.JOBSPY_SITE_NAMES,
         search_term=keywords,
-        location=location,
+        location=location if not is_remote_search else None,
+        is_remote=is_remote_search,
         results_wanted=cfg.JOB_RESULT_LIMIT,
         hours_old=hours_old,
         country_indeed="USA",
     )
-    return df.to_dict("records") if df is not None and not df.empty else []
+    if df is not None and not df.empty:
+        df = df.where(pd.notnull(df), None)
+        return df.to_dict("records")
+    return []
 
 
 def fetch_remoteok_jobs(keywords: str, hours: int):
@@ -120,15 +126,13 @@ def fetch_adzuna_jobs(keywords: str, location: str, hours: int):
     params = {
         "app_id": cfg.ADZUNA_APP_ID,
         "app_key": cfg.ADZUNA_APP_KEY,
-        "what": keywords,
-        "max_days_old": max_days_old,
         "results_per_page": cfg.JOB_RESULT_LIMIT,
-        "sort_by": "date",
+        "what": keywords,
+        "where": location,
+        "max_days_old": max_days_old,
     }
-    if location and location.lower() != "remote":
-        params["where"] = location
-
-    url = f"https://api.adzuna.com/v1/api/jobs/{cfg.ADZUNA_COUNTRY}/search/1"
+    country = getattr(cfg, "ADZUNA_COUNTRY", "us")
+    url = f"https://api.adzuna.com/v1/api/jobs/{country}/search/1"
     resp = requests.get(url, params=params, timeout=15)
     resp.raise_for_status()
     return resp.json().get("results", [])
@@ -138,25 +142,27 @@ def fetch_jooble_jobs(keywords: str, location: str, hours: int):
     if not cfg.JOOBLE_API_KEY:
         raise RuntimeError("Jooble not configured (missing API key)")
 
+    payload = {
+        "keywords": keywords,
+        "location": location,
+        "page": 1,
+    }
     url = f"https://jooble.org/api/{cfg.JOOBLE_API_KEY}"
-    payload = {"keywords": keywords, "location": "" if location.lower() == "remote" else location}
     resp = requests.post(url, json=payload, timeout=15)
     resp.raise_for_status()
-    jobs = resp.json().get("jobs", [])
-
-    # Jooble doesn't support a lookback filter server-side; filter client-side
-    # using the "updated" field where present, best-effort.
+    data = resp.json()
+    jobs = data.get("jobs", [])
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
     out = []
     for j in jobs:
-        updated = j.get("updated")
-        if updated:
+        updated_str = j.get("updated")
+        if updated_str:
             try:
-                posted = datetime.strptime(updated, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
-                if posted < cutoff:
+                dt = datetime.fromisoformat(updated_str.replace("Z", "+00:00"))
+                if dt < cutoff:
                     continue
-            except ValueError:
-                pass  # unparseable date -> keep it, don't drop good results over formatting
+            except Exception:
+                pass
         out.append(j)
     return out
 
@@ -167,8 +173,18 @@ def fetch_jooble_jobs(keywords: str, location: str, hours: int):
 def _to_iso(dt) -> str:
     if dt is None:
         return datetime.now(timezone.utc).isoformat()
+    try:
+        import math
+        import pandas as pd
+        if pd.isna(dt) or (isinstance(dt, float) and math.isnan(dt)):
+            return datetime.now(timezone.utc).isoformat()
+    except Exception:
+        pass
     if isinstance(dt, (int, float)):
-        return datetime.fromtimestamp(dt, tz=timezone.utc).isoformat()
+        try:
+            return datetime.fromtimestamp(dt, tz=timezone.utc).isoformat()
+        except ValueError:
+            return datetime.now(timezone.utc).isoformat()
     if isinstance(dt, str):
         return dt
     try:
@@ -261,6 +277,22 @@ def _run_source(name: str, keywords: str, location: str, hours: int):
     raise ValueError(name)
 
 
+def _is_remote(job: dict) -> bool:
+    loc = (job.get("location") or "").lower()
+    title = (job.get("title") or "").lower()
+    source = (job.get("source") or "").lower()
+    return (
+        "remote" in loc or
+        "worldwide" in loc or
+        "anywhere" in loc or
+        "work from home" in loc or
+        "wfh" in loc or
+        "telecommute" in loc or
+        "remote" in title or
+        source == "remoteok"
+    )
+
+
 def scrape_all_boards(keywords: str, location: str = None, hours: int = None, limit: int = None):
     """
     Returns (jobs: list[dict], status: dict[source] -> "ok" | "failed: <reason>" | "timeout")
@@ -279,16 +311,28 @@ def scrape_all_boards(keywords: str, location: str = None, hours: int = None, li
             for name in SOURCES
         }
         deadline = time.monotonic() + cfg.JOB_SEARCH_TIMEOUT_SECONDS
-        for future in as_completed(futures, timeout=cfg.JOB_SEARCH_TIMEOUT_SECONDS):
-            name = futures[future]
-            try:
-                jobs = future.result(timeout=max(0, deadline - time.monotonic()))
-                results.extend(jobs)
-                status[name] = "ok"
-            except Exception as e:
-                logger.warning("Source %s failed: %s", name, e)
-                status[name] = f"failed: {e}"
+        try:
+            for future in as_completed(futures, timeout=cfg.JOB_SEARCH_TIMEOUT_SECONDS):
+                name = futures[future]
+                try:
+                    jobs = future.result(timeout=max(0.1, deadline - time.monotonic()))
+                    results.extend(jobs)
+                    status[name] = "ok"
+                except Exception as e:
+                    logger.warning("Source %s failed: %s", name, e)
+                    status[name] = f"failed: {e}"
+        except TimeoutError:
+            logger.warning("Job search reached total timeout (%ds); returning partial results.", cfg.JOB_SEARCH_TIMEOUT_SECONDS)
+            for future, name in futures.items():
+                if future.done() and status[name] == "timeout":
+                    try:
+                        jobs = future.result()
+                        results.extend(jobs)
+                        status[name] = "ok"
+                    except Exception as e:
+                        status[name] = f"failed: {e}"
 
     results = dedupe_jobs(results)
-    results.sort(key=lambda j: j["date_posted"], reverse=True)
+    # Sort Remote jobs first (1 > 0), then by date_posted newest-first
+    results.sort(key=lambda j: (1 if _is_remote(j) else 0, j["date_posted"]), reverse=True)
     return results[:limit], status
