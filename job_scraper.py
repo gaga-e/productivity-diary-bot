@@ -316,6 +316,9 @@ def _region_score(job: dict) -> int:
     return 0
 
 
+SOURCES = ["linkedin_indeed", "remoteok", "adzuna", "jooble"]
+
+
 def _run_source(name: str, keywords: str, location: str, hours: int):
     if name == "linkedin_indeed":
         raw = fetch_jobspy_jobs(keywords, location, hours)
