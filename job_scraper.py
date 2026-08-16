@@ -279,12 +279,18 @@ WORLDWIDE_REMOTE_KEYWORDS = [
 
 US_ONLY_RESTRICTIONS = [
     "us only", "usa only", "us citizens", "must reside in us", "must be in us",
-    "us-based only", "united states only", "must be located in the us"
+    "us-based only", "united states only", "must be located in the us",
+    ", us", ", usa", "united states", ", ca", ", ny", ", tx", ", fl", ", wa", ", ma",
+    ", il", ", ga", ", nc", ", co", ", va", ", nj", ", pa", ", oh", ", mi", ", az",
+    ", tn", ", mo", ", md", ", ut", ", mn", ", wi", ", sc", ", in", ", al", ", nv"
 ]
 
 
 def _is_us_restricted(job: dict) -> bool:
     text = f"{job.get('title', '')} {job.get('location', '')}".lower()
+    # Worldwide/Global/EMEA/Africa roles are not US-restricted
+    if any(global_kw in text for global_kw in ["worldwide", "global", "anywhere", "work from anywhere", "emea", "africa"]):
+        return False
     return any(req in text for req in US_ONLY_RESTRICTIONS)
 
 
@@ -391,6 +397,12 @@ def scrape_all_boards(keywords: str, location: str = None, hours: int = None, li
                         status[name] = f"failed: {e}"
 
     results = dedupe_jobs(results)
-    # Sort by Region Score (3 > 2 > 1 > 0), then by date_posted newest-first
+
+    # Completely filter out US-restricted roles unless the user explicitly searched for US location
+    is_us_requested = bool(location and any(us in location.lower() for us in ["united states", "usa", " us"]))
+    if not is_us_requested:
+        results = [j for j in results if not _is_us_restricted(j)]
+
+    # Sort remaining jobs by Region Score (3 > 2 > 1), then by date_posted newest-first
     results.sort(key=lambda j: (_region_score(j), j["date_posted"]), reverse=True)
     return results[:limit], status
