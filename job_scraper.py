@@ -75,19 +75,30 @@ def fetch_jobspy_jobs(keywords: str, location: str, hours: int):
 
     hours_old = hours if hours else 24
     is_remote_search = bool(location and "remote" in location.lower())
-    df = scrape_jobs(
-        site_name=cfg.JOBSPY_SITE_NAMES,
-        search_term=keywords,
-        location=location if not is_remote_search else None,
-        is_remote=is_remote_search,
-        results_wanted=cfg.JOB_RESULT_LIMIT,
-        hours_old=hours_old,
-        country_indeed="USA",
-    )
-    if df is not None and not df.empty:
-        df = df.where(pd.notnull(df), None)
-        return df.to_dict("records")
-    return []
+
+    results_list = []
+    # Query across UK, South Africa, and USA for broader EMEA/Africa & Global Remote coverage
+    countries = ["UK", "South Africa", "USA"] if is_remote_search else ["USA"]
+    per_country_limit = max(10, cfg.JOB_RESULT_LIMIT // len(countries))
+
+    for ctry in countries:
+        try:
+            df = scrape_jobs(
+                site_name=cfg.JOBSPY_SITE_NAMES,
+                search_term=keywords,
+                location=location if not is_remote_search else None,
+                is_remote=is_remote_search,
+                results_wanted=per_country_limit,
+                hours_old=hours_old,
+                country_indeed=ctry,
+            )
+            if df is not None and not df.empty:
+                df = df.where(pd.notnull(df), None)
+                results_list.extend(df.to_dict("records"))
+        except Exception as e:
+            logger.warning("JobSpy fetch failed for country %s: %s", ctry, e)
+
+    return results_list
 
 
 def fetch_remoteok_jobs(keywords: str, hours: int):
@@ -131,7 +142,7 @@ def fetch_adzuna_jobs(keywords: str, location: str, hours: int):
         "where": location,
         "max_days_old": max_days_old,
     }
-    country = getattr(cfg, "ADZUNA_COUNTRY", "us")
+    country = getattr(cfg, "ADZUNA_COUNTRY", "gb")
     url = f"https://api.adzuna.com/v1/api/jobs/{country}/search/1"
     resp = requests.get(url, params=params, timeout=15)
     resp.raise_for_status()
@@ -234,11 +245,6 @@ def normalize_job(raw: dict, source: str) -> dict:
 
 
 def job_hash(job: dict) -> str:
-    """
-    Dedup key is title+company+location, NOT the link — apply links carry
-    tracking query params that differ between scrapes of the same posting
-    and would otherwise defeat dedup.
-    """
     key = f"{job['title'].lower().strip()}|{job['company'].lower().strip()}|{job['location'].lower().strip()}"
     return hashlib.md5(key.encode()).hexdigest()
 
@@ -255,10 +261,59 @@ def dedupe_jobs(jobs: list) -> list:
 
 
 # --------------------------------------------------------------------------
-# Orchestration: run every source concurrently, tolerate individual failures,
-# return (jobs, source_status) so callers can show a "4/5 sources responded" line.
+# Regional Classification
 # --------------------------------------------------------------------------
-SOURCES = ["linkedin_indeed", "remoteok", "adzuna", "jooble"]
+EMEA_AFRICA_KEYWORDS = [
+    "emea", "africa", "uk", "united kingdom", "london", "england", "south africa",
+    "nigeria", "lagos", "kenya", "nairobi", "egypt", "cairo", "ghana", "accra",
+    "germany", "berlin", "france", "paris", "netherlands", "amsterdam", "spain",
+    "madrid", "barcelona", "uae", "dubai", "united arab emirates", "saudi",
+    "ireland", "dublin", "switzerland", "zurich", "poland", "sweden", "stockholm",
+    "estonia", "portugal", "lisbon", "europe"
+]
+
+WORLDWIDE_REMOTE_KEYWORDS = [
+    "worldwide", "anywhere", "global", "remote - worldwide", "remote (worldwide)",
+    "work from anywhere", "remoteok", "emea", "africa"
+]
+
+US_ONLY_RESTRICTIONS = [
+    "us only", "usa only", "us citizens", "must reside in us", "must be in us",
+    "us-based only", "united states only", "must be located in the us"
+]
+
+
+def _is_us_restricted(job: dict) -> bool:
+    text = f"{job.get('title', '')} {job.get('location', '')}".lower()
+    return any(req in text for req in US_ONLY_RESTRICTIONS)
+
+
+def _region_score(job: dict) -> int:
+    """
+    Ranks jobs by regional relevance:
+      3: Fully Remote Worldwide / Global / EMEA / Africa
+      2: Specific EMEA & Africa location/region
+      1: General Remote / Unspecified
+      0: Restricted US-Only local/onsite role
+    """
+    loc = (job.get("location") or "").lower()
+    title = (job.get("title") or "").lower()
+    src = (job.get("source") or "").lower()
+    haystack = f"{title} {loc} {src}"
+
+    if _is_us_restricted(job):
+        return 0
+
+    if any(w in haystack for w in WORLDWIDE_REMOTE_KEYWORDS):
+        return 3
+
+    if any(k in haystack for k in EMEA_AFRICA_KEYWORDS):
+        return 2
+
+    if _is_remote(job):
+        return 1
+
+    return 0
 
 
 def _run_source(name: str, keywords: str, location: str, hours: int):
@@ -333,6 +388,6 @@ def scrape_all_boards(keywords: str, location: str = None, hours: int = None, li
                         status[name] = f"failed: {e}"
 
     results = dedupe_jobs(results)
-    # Sort Remote jobs first (1 > 0), then by date_posted newest-first
-    results.sort(key=lambda j: (1 if _is_remote(j) else 0, j["date_posted"]), reverse=True)
+    # Sort by Region Score (3 > 2 > 1 > 0), then by date_posted newest-first
+    results.sort(key=lambda j: (_region_score(j), j["date_posted"]), reverse=True)
     return results[:limit], status
