@@ -153,23 +153,34 @@ async def _run_search_and_respond(update, context, keywords, location, status_ms
         )
         return
 
-    search_id = uuid.uuid4().hex[:10]
-    cache.store_results_for_paging(search_id, jobs)
+    total_jobs = len(jobs)
+    chunk_size = cfg.JOB_RESULTS_PER_PAGE  # 10 jobs per text message
+    total_parts = max(1, (total_jobs - 1) // chunk_size + 1)
 
-    header = f'Found {len(jobs)} jobs for "<b>{escaped_keywords}</b>" ({escaped_loc})\n{_status_summary(status)}'
-    await status_msg.edit_text(f"✅ Found {len(jobs)} jobs for \"{escaped_keywords}\"")
-
-    total_pages = max(1, (len(jobs) - 1) // cfg.JOB_RESULTS_PER_PAGE + 1)
-    text = _build_page_text(jobs, 0, cfg.JOB_RESULTS_PER_PAGE, header=header)
-    keyboard = _build_keyboard(search_id, 0, total_pages)
-
-    await context.bot.send_message(
-        chat_id=chat_id,
-        text=text,
-        parse_mode="HTML",
-        reply_markup=keyboard,
-        disable_web_page_preview=True,
+    await status_msg.edit_text(
+        f'✅ Found {total_jobs} jobs for "<b>{escaped_keywords}</b>" ({escaped_loc})\n'
+        f'{_status_summary(status)}\n\n'
+        f'<i>Sending {total_parts} permanent text message{"s" if total_parts > 1 else ""} to your chat below...</i>',
+        parse_mode="HTML"
     )
+
+    for i in range(total_parts):
+        start = i * chunk_size
+        chunk = jobs[start : start + chunk_size]
+        header = f'🔍 <b>Jobs for "{escaped_keywords}" ({escaped_loc})</b> — <i>Part {i + 1}/{total_parts}</i>'
+        body = "\n\n".join(
+            f"<b>#{start + idx + 1}</b> {_format_job(j)}"
+            for idx, j in enumerate(chunk)
+        )
+        text = f"{header}\n\n{body}"
+
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=text,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+        await asyncio.sleep(0.3)
 
 
 async def btn_job_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -185,7 +196,7 @@ async def btn_job_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     jobs = cache.get_results_for_paging(search_id)
     if jobs is None:
-        await query.edit_message_text("⚠️ This search has expired (24h limit). Please run /job again.")
+        await query.edit_message_text("⚠️ Legacy inline buttons have been upgraded to permanent text messages. Please run /job again!")
         return
 
     total_pages = max(1, (len(jobs) - 1) // cfg.JOB_RESULTS_PER_PAGE + 1)
