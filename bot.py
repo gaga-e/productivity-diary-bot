@@ -3,6 +3,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, Cal
 from config import TELEGRAM_TOKEN
 import handlers
 from handlers_job import cmd_job, btn_job_page
+from handlers_startups import cmd_startups
 import database as db
 from scheduler import setup_scheduler
 from keep_alive import keep_alive
@@ -25,6 +26,8 @@ def main():
     app.add_handler(CommandHandler("start", handlers.start))
     app.add_handler(CommandHandler("help", handlers.help_command))
     app.add_handler(CommandHandler("job", cmd_job))
+    app.add_handler(CommandHandler("startups", cmd_startups))
+    app.add_handler(CommandHandler("founders", cmd_startups))
     app.add_handler(CallbackQueryHandler(btn_job_page, pattern=r"^jobpage:"))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handlers.handle_message))
     app.add_handler(CallbackQueryHandler(handlers.button_handler))

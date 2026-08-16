@@ -74,7 +74,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• *📋 My To-Do List* - Check off habits/tasks\n"
         "• *➕ Add Task* - Multi-line tasks supported\n"
         "• *❌ Remove Task* - Delete mistake entries\n"
-        "• *💼 Job Search* - Use `/job python backend` or `/job \"data engineer\" --loc=\"Remote\"`\n"
+        "• *💼 Job Search* - Use `/job python backend` or `/job \"data engineer\"`\n"
+        "• *🚀 Startup & Founder Search* - Use `/startups` or `/founders` to get new launches & founder emails\n"
         "• *🔄 Manual Recap* - Get your progress now\n"
         "• *Reminders* - Type 'remind me in 30 mins to gym' or '/remind 1h water'\n"
         "• *Notes* - Just send any message to save it!",
