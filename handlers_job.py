@@ -122,7 +122,7 @@ async def _run_search_and_respond(update, context, keywords, location, status_ms
     cached = cache.get_cached_search(keywords, location)
     if cached:
         jobs, status = cached
-        await status_msg.edit_text("✅ Found cached results from the last 15 minutes, sending...")
+        await status_msg.edit_text("✅ Found cached results from the last 24 hours, sending...")
     else:
         loop = asyncio.get_event_loop()
         try:
@@ -185,7 +185,7 @@ async def btn_job_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     jobs = cache.get_results_for_paging(search_id)
     if jobs is None:
-        await query.edit_message_text("⚠️ This search has expired (15 min limit). Please run /job again.")
+        await query.edit_message_text("⚠️ This search has expired (24h limit). Please run /job again.")
         return
 
     total_pages = max(1, (len(jobs) - 1) // cfg.JOB_RESULTS_PER_PAGE + 1)

@@ -57,6 +57,6 @@ JOB_LOOKBACK_HOURS = 168  # 7 days default lookback for active recent listings
 JOB_RESULT_LIMIT = 50
 JOB_RESULTS_PER_PAGE = 10
 JOB_SEARCH_TIMEOUT_SECONDS = 45
-JOB_SEARCH_CACHE_MINUTES = 15
+JOB_SEARCH_CACHE_MINUTES = 1440  # 24 hours (1 day) cache duration
 JOB_SEARCH_COOLDOWN_SECONDS = 60
 JOBSPY_SITE_NAMES = ["linkedin", "indeed"]
