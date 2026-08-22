@@ -24,6 +24,10 @@ from job_scraper import parse_job_query, scrape_all_boards
 logger = logging.getLogger(__name__)
 
 SOURCE_LABELS = {
+    "wellfound": "Wellfound",
+    "justremote": "JustRemote",
+    "builtin": "BuiltIn",
+    "careerhound": "CareerHound",
     "linkedin_indeed": "LinkedIn/Indeed",
     "remoteok": "RemoteOK",
     "adzuna": "Adzuna",

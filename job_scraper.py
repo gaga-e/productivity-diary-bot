@@ -178,6 +178,147 @@ def fetch_jooble_jobs(keywords: str, location: str, hours: int):
     return out
 
 
+def fetch_wellfound_jobs(keywords: str, hours: int):
+    """Fetches startup & tech job listings from Wellfound (AngelList)."""
+    try:
+        import tls_client
+        from bs4 import BeautifulSoup
+
+        session = tls_client.Session(client_identifier="chrome_120")
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        url = "https://wellfound.com/jobs"
+        resp = session.get(url, headers=headers)
+        if resp.status_code != 200:
+            return []
+
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        jobs = []
+        terms = [t.lower() for t in keywords.split()] if keywords else []
+        for a in soup.find_all('a', href=re.compile(r'/jobs/\d+')):
+            title = a.get_text(strip=True)
+            link = "https://wellfound.com" + a['href'] if a['href'].startswith('/') else a['href']
+            if terms and not any(t in title.lower() for t in terms):
+                continue
+            jobs.append({
+                "title": title,
+                "company": "Wellfound Startup",
+                "location": "Remote / Global",
+                "link": link,
+                "source": "wellfound",
+                "date_posted": datetime.now(timezone.utc).isoformat()
+            })
+        return jobs
+    except Exception as e:
+        logger.warning("Wellfound fetch failed: %s", e)
+        return []
+
+
+def fetch_justremote_jobs(keywords: str, hours: int):
+    """Fetches remote tech & design jobs from JustRemote.co."""
+    try:
+        from bs4 import BeautifulSoup
+
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        url = "https://justremote.co/remote-jobs"
+        resp = requests.get(url, headers=headers, timeout=10)
+        if resp.status_code != 200:
+            return []
+
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        jobs = []
+        terms = [t.lower() for t in keywords.split()] if keywords else []
+        for a in soup.find_all('a', href=re.compile(r'/remote-jobs/')):
+            href = a['href']
+            title = a.get_text(strip=True)
+            if 'new' in href or len(title) < 3:
+                continue
+            if terms and not any(t in title.lower() for t in terms):
+                continue
+            full_url = "https://justremote.co" + href if href.startswith('/') else href
+            jobs.append({
+                "title": title,
+                "company": "JustRemote Partner",
+                "location": "Remote / Worldwide",
+                "link": full_url,
+                "source": "justremote",
+                "date_posted": datetime.now(timezone.utc).isoformat()
+            })
+        return jobs
+    except Exception as e:
+        logger.warning("JustRemote fetch failed: %s", e)
+        return []
+
+
+def fetch_builtin_jobs(keywords: str, hours: int):
+    """Fetches tech jobs from BuiltIn.com."""
+    try:
+        from bs4 import BeautifulSoup
+        import tls_client
+
+        session = tls_client.Session(client_identifier="chrome_120")
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        url = f"https://builtin.com/jobs?q={keywords}"
+        resp = session.get(url, headers=headers)
+        if resp.status_code != 200:
+            return []
+
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        jobs = []
+        for card in soup.find_all('div', attrs={'data-id': 'job-card'}) or soup.find_all('h2'):
+            a = card.find('a', href=True) if hasattr(card, 'find') else None
+            if not a:
+                continue
+            title = a.get_text(strip=True)
+            link = "https://builtin.com" + a['href'] if a['href'].startswith('/') else a['href']
+            jobs.append({
+                "title": title,
+                "company": "BuiltIn Tech",
+                "location": "Remote / Global",
+                "link": link,
+                "source": "builtin",
+                "date_posted": datetime.now(timezone.utc).isoformat()
+            })
+        return jobs
+    except Exception as e:
+        logger.warning("BuiltIn fetch failed: %s", e)
+        return []
+
+
+def fetch_careerhound_jobs(keywords: str, hours: int):
+    """Fetches curated tech jobs from CareerHound.io."""
+    try:
+        from bs4 import BeautifulSoup
+
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        url = "https://careerhound.io"
+        resp = requests.get(url, headers=headers, timeout=10)
+        if resp.status_code != 200:
+            return []
+
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        jobs = []
+        terms = [t.lower() for t in keywords.split()] if keywords else []
+        for a in soup.find_all('a', href=True):
+            href = a['href']
+            title = a.get_text(strip=True)
+            if len(title) > 3 and any(k in href.lower() for k in ['/job', '/career', '/position']):
+                if terms and not any(t in title.lower() for t in terms):
+                    continue
+                full_url = "https://careerhound.io" + href if href.startswith('/') else href
+                jobs.append({
+                    "title": title,
+                    "company": "CareerHound Startup",
+                    "location": "Remote / Global",
+                    "link": full_url,
+                    "source": "careerhound",
+                    "date_posted": datetime.now(timezone.utc).isoformat()
+                })
+        return jobs
+    except Exception as e:
+        logger.warning("CareerHound fetch failed: %s", e)
+        return []
+
+
 # --------------------------------------------------------------------------
 # Normalization: every source -> {title, company, location, link, source, date_posted}
 # --------------------------------------------------------------------------
@@ -211,6 +352,15 @@ def normalize_job(raw: dict, source: str) -> dict:
             "company": str(raw.get("company") or "").strip(),
             "location": str(raw.get("location") or "").strip(),
             "link": raw.get("job_url") or raw.get("job_url_direct") or "",
+            "source": source,
+            "date_posted": _to_iso(raw.get("date_posted")),
+        }
+    if source in ("wellfound", "justremote", "builtin", "careerhound"):
+        return {
+            "title": str(raw.get("title") or "").strip(),
+            "company": str(raw.get("company") or "Tech Company").strip(),
+            "location": str(raw.get("location") or "Remote").strip(),
+            "link": raw.get("link") or "",
             "source": source,
             "date_posted": _to_iso(raw.get("date_posted")),
         }
@@ -294,9 +444,13 @@ def _is_us_restricted(job: dict) -> bool:
     return any(req in text for req in US_ONLY_RESTRICTIONS)
 
 
+PREFERRED_BOARDS = ["wellfound", "justremote", "builtin", "careerhound", "remoteok"]
+
+
 def _region_score(job: dict) -> int:
     """
-    Ranks jobs by regional relevance:
+    Ranks jobs by regional relevance and board quality:
+      4: Preferred Startup/Remote Boards (Wellfound, JustRemote, BuiltIn, CareerHound, RemoteOK)
       3: Fully Remote Worldwide / Global / EMEA / Africa
       2: Specific EMEA & Africa location/region
       1: General Remote / Unspecified
@@ -310,6 +464,9 @@ def _region_score(job: dict) -> int:
     if _is_us_restricted(job):
         return 0
 
+    if src in PREFERRED_BOARDS:
+        return 4
+
     if any(w in haystack for w in WORLDWIDE_REMOTE_KEYWORDS):
         return 3
 
@@ -322,10 +479,22 @@ def _region_score(job: dict) -> int:
     return 0
 
 
-SOURCES = ["linkedin_indeed", "remoteok", "adzuna", "jooble"]
+SOURCES = ["wellfound", "justremote", "builtin", "careerhound", "linkedin_indeed", "remoteok", "adzuna", "jooble"]
 
 
 def _run_source(name: str, keywords: str, location: str, hours: int):
+    if name == "wellfound":
+        raw = fetch_wellfound_jobs(keywords, hours)
+        return [normalize_job(r, "wellfound") for r in raw]
+    if name == "justremote":
+        raw = fetch_justremote_jobs(keywords, hours)
+        return [normalize_job(r, "justremote") for r in raw]
+    if name == "builtin":
+        raw = fetch_builtin_jobs(keywords, hours)
+        return [normalize_job(r, "builtin") for r in raw]
+    if name == "careerhound":
+        raw = fetch_careerhound_jobs(keywords, hours)
+        return [normalize_job(r, "careerhound") for r in raw]
     if name == "linkedin_indeed":
         raw = fetch_jobspy_jobs(keywords, location, hours)
         return [normalize_job(r, r.get("site", "linkedin")) for r in raw]
